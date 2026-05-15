@@ -5,8 +5,8 @@ CATALOG = "shopflow"
 SILVER_TABLE = f"{CATALOG}.silver.orders"
 ORDERS_BY_STATUS_TABLE = f"{CATALOG}.gold.orders_by_status"
 PIPELINE_LATENCY_TABLE = f"{CATALOG}.gold.pipeline_latency"
-STATUS_CHECKPOINT = "s3a://shopflow-lakehouse/checkpoints/gold_orders_status"
-LATENCY_CHECKPOINT = "s3a://shopflow-lakehouse/checkpoints/gold_pipeline_latency"
+STATUS_CHECKPOINT = "s3a://shopflow-lakehouse/checkpoints/gold_orders_status_pdf_v2"
+LATENCY_CHECKPOINT = "s3a://shopflow-lakehouse/checkpoints/gold_pipeline_latency_pdf_v2"
 
 
 spark = (

@@ -4,8 +4,12 @@ CREATE TABLE IF NOT EXISTS customers (
     customer_unique_id TEXT,
     customer_zip_code_prefix INT,
     customer_city TEXT,
-    customer_state TEXT
+    customer_state TEXT,
+    customer_segment TEXT
 );
+
+ALTER TABLE customers
+ADD COLUMN IF NOT EXISTS customer_segment TEXT;
 
 -- Products
 CREATE TABLE IF NOT EXISTS products (
@@ -39,6 +43,7 @@ CREATE TABLE IF NOT EXISTS orders (
     order_id TEXT PRIMARY KEY,
     customer_id TEXT REFERENCES customers(customer_id),
     order_status TEXT,
+    sales_channel TEXT,
     order_purchase_timestamp TIMESTAMP,
     order_approved_at TIMESTAMP,
     order_delivered_carrier_date TIMESTAMP,
@@ -46,6 +51,9 @@ CREATE TABLE IF NOT EXISTS orders (
     order_estimated_delivery_date TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE orders
+ADD COLUMN IF NOT EXISTS sales_channel TEXT;
 
 -- Order items
 CREATE TABLE IF NOT EXISTS order_items (
@@ -81,6 +89,16 @@ CREATE TABLE IF NOT EXISTS reviews (
     PRIMARY KEY (review_id, order_id)
 );
 
+-- Returns and cancellations
+CREATE TABLE IF NOT EXISTS returns (
+    return_id TEXT PRIMARY KEY,
+    order_id TEXT REFERENCES orders(order_id),
+    return_date TIMESTAMP,
+    return_reason TEXT,
+    return_status TEXT,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Geolocation
 CREATE TABLE IF NOT EXISTS geolocation (
     geolocation_zip_code_prefix INT,
@@ -99,6 +117,31 @@ CREATE TABLE IF NOT EXISTS pipeline_events (
 );
 
 -- Logical replication publication
-CREATE PUBLICATION shopflow_pub FOR TABLE
-    customers, orders, order_items, payments,
-    reviews, products, sellers, product_category_translation;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_publication
+        WHERE pubname = 'shopflow_pub'
+    ) THEN
+        CREATE PUBLICATION shopflow_pub FOR TABLE
+            customers, orders, order_items, payments,
+            reviews, returns, products, sellers, product_category_translation;
+    END IF;
+END
+$$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_publication_rel rel
+        JOIN pg_publication pub ON pub.oid = rel.prpubid
+        JOIN pg_class cls ON cls.oid = rel.prrelid
+        WHERE pub.pubname = 'shopflow_pub'
+          AND cls.relname = 'returns'
+    ) THEN
+        ALTER PUBLICATION shopflow_pub ADD TABLE returns;
+    END IF;
+END
+$$;

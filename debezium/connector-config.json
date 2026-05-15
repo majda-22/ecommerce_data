@@ -18,7 +18,7 @@
     "publication.autocreate.mode": "filtered",
 
     "schema.include.list": "public",
-    "table.include.list": "public.customers,public.products,public.sellers,public.product_category_translation,public.orders,public.order_items,public.payments,public.reviews",
+    "table.include.list": "public.customers,public.products,public.sellers,public.product_category_translation,public.orders,public.order_items,public.payments,public.reviews,public.returns",
 
     "snapshot.mode": "initial",
     "snapshot.locking.mode": "none",

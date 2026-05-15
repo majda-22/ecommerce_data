@@ -20,7 +20,12 @@ TIMESTAMP_COLS = [
     "shipping_limit_date",
     "review_creation_date",
     "review_answer_timestamp",
+    "return_date",
 ]
+
+CUSTOMER_SEGMENTS = ["consumer", "corporate", "home_office", "small_business"]
+SALES_CHANNELS = ["web", "mobile", "marketplace", "partner"]
+RETURN_REASONS = ["customer_cancelled", "late_delivery", "payment_issue", "stock_unavailable"]
 
 PRIMARY_KEYS = {
     "customers": ["customer_id"],
@@ -31,6 +36,7 @@ PRIMARY_KEYS = {
     "order_items": ["order_id", "order_item_id"],
     "payments": ["order_id", "payment_sequential"],
     "reviews": ["review_id", "order_id"],
+    "returns": ["return_id"],
 }
 
 # Order matters because of foreign keys
@@ -43,6 +49,7 @@ LOAD_PLAN = [
     ("order_items",                  "olist_order_items_dataset.csv"),
     ("payments",                     "olist_order_payments_dataset.csv"),
     ("reviews",                      "olist_order_reviews_dataset.csv"),
+    ("returns",                      None),
     ("geolocation",                  "olist_geolocation_dataset.csv"),
 ]
 
@@ -59,6 +66,16 @@ def read_olist_csv(filename):
 
 def clean_dataframe(table_name, df):
     df = df.copy()
+
+    if table_name == "customers" and "customer_segment" not in df.columns:
+        df["customer_segment"] = df["customer_id"].apply(
+            lambda value: CUSTOMER_SEGMENTS[hash(str(value)) % len(CUSTOMER_SEGMENTS)]
+        )
+
+    if table_name == "orders" and "sales_channel" not in df.columns:
+        df["sales_channel"] = df["order_id"].apply(
+            lambda value: SALES_CHANNELS[hash(str(value)) % len(SALES_CHANNELS)]
+        )
 
     for col in TIMESTAMP_COLS:
         if col in df.columns:
@@ -90,6 +107,11 @@ def reset_tables():
 
 
 def load_table(table_name, filename):
+    if filename is None:
+        print(f"\nGenerating {table_name} from operational order status...")
+        generate_returns()
+        return
+
     print(f"\nLoading {table_name} from {filename}...")
 
     df = clean_dataframe(table_name, read_olist_csv(filename))
@@ -103,6 +125,42 @@ def load_table(table_name, filename):
         method="multi",
     )
     print(f"  Inserted {len(df):,} rows into {table_name}")
+
+
+def generate_returns():
+    with engine.begin() as conn:
+        result = conn.execute(
+            text("""
+                INSERT INTO returns (
+                    return_id,
+                    order_id,
+                    return_date,
+                    return_reason,
+                    return_status,
+                    updated_at
+                )
+                SELECT
+                    'ret_' || order_id AS return_id,
+                    order_id,
+                    COALESCE(order_delivered_customer_date, order_estimated_delivery_date, order_purchase_timestamp)
+                        + INTERVAL '1 day' AS return_date,
+                    CASE abs(hashtext(order_id)) % 4
+                        WHEN 0 THEN 'customer_cancelled'
+                        WHEN 1 THEN 'late_delivery'
+                        WHEN 2 THEN 'payment_issue'
+                        ELSE 'stock_unavailable'
+                    END AS return_reason,
+                    CASE order_status
+                        WHEN 'canceled' THEN 'approved'
+                        ELSE 'requested'
+                    END AS return_status,
+                    CURRENT_TIMESTAMP
+                FROM orders
+                WHERE order_status IN ('canceled', 'unavailable')
+                ON CONFLICT (return_id) DO NOTHING
+            """)
+        )
+        print(f"  Inserted {result.rowcount:,} rows into returns")
 
 
 def verify_counts():
