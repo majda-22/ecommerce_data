@@ -1,0 +1,4 @@
+trino/*.properties text eol=lf
+trino/catalog/*.properties text eol=lf
+trino/*.config text eol=lf
+spark/*.sh text eol=lf

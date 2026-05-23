@@ -15,6 +15,9 @@ DB_URL = os.getenv(
 STATUSES = ["created", "approved", "processing", "shipped", "delivered", "canceled"]
 STATES = ["SP", "RJ", "MG", "RS", "PR", "SC", "BA", "PE", "GO", "CE"]
 CITIES = ["sao paulo", "rio de janeiro", "belo horizonte", "curitiba", "salvador"]
+CUSTOMER_SEGMENTS = ["consumer", "corporate", "home_office", "small_business"]
+SALES_CHANNELS = ["web", "mobile", "marketplace", "partner"]
+RETURN_REASONS = ["customer_cancelled", "late_delivery", "payment_issue", "stock_unavailable"]
 
 
 def new_id(prefix: str) -> str:
@@ -73,9 +76,10 @@ def insert_order(conn) -> str:
                 customer_unique_id,
                 customer_zip_code_prefix,
                 customer_city,
-                customer_state
+                customer_state,
+                customer_segment
             )
-            VALUES (:customer_id, :customer_unique_id, :zip_code, :city, :state)
+            VALUES (:customer_id, :customer_unique_id, :zip_code, :city, :state, :segment)
         """),
         {
             "customer_id": customer_id,
@@ -83,6 +87,7 @@ def insert_order(conn) -> str:
             "zip_code": random.randint(1000, 99999),
             "city": random.choice(CITIES),
             "state": state,
+            "segment": random.choice(CUSTOMER_SEGMENTS),
         },
     )
 
@@ -92,6 +97,7 @@ def insert_order(conn) -> str:
                 order_id,
                 customer_id,
                 order_status,
+                sales_channel,
                 order_purchase_timestamp,
                 order_approved_at,
                 order_estimated_delivery_date,
@@ -101,6 +107,7 @@ def insert_order(conn) -> str:
                 :order_id,
                 :customer_id,
                 :status,
+                :sales_channel,
                 :purchase_ts,
                 :approved_at,
                 :estimated_delivery,
@@ -111,6 +118,7 @@ def insert_order(conn) -> str:
             "order_id": order_id,
             "customer_id": customer_id,
             "status": status,
+            "sales_channel": random.choice(SALES_CHANNELS),
             "purchase_ts": now,
             "approved_at": now if status != "created" else None,
             "estimated_delivery": now + timedelta(days=random.randint(2, 8)),
@@ -168,6 +176,40 @@ def insert_order(conn) -> str:
     return order_id
 
 
+def upsert_return(conn, order_id: str, status: str = "requested") -> None:
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    conn.execute(
+        text("""
+            INSERT INTO returns (
+                return_id,
+                order_id,
+                return_date,
+                return_reason,
+                return_status,
+                updated_at
+            )
+            VALUES (
+                :return_id,
+                :order_id,
+                :return_date,
+                :return_reason,
+                :return_status,
+                CURRENT_TIMESTAMP
+            )
+            ON CONFLICT (return_id) DO UPDATE
+            SET return_status = EXCLUDED.return_status,
+                updated_at = CURRENT_TIMESTAMP
+        """),
+        {
+            "return_id": f"ret_{order_id}",
+            "order_id": order_id,
+            "return_date": now,
+            "return_reason": random.choice(RETURN_REASONS),
+            "return_status": status,
+        },
+    )
+
+
 def update_order(conn) -> str | None:
     row = conn.execute(
         text("""
@@ -212,6 +254,52 @@ def update_order(conn) -> str | None:
         {"order_id": order_id, "status": next_status, "now": now},
     )
 
+    if next_status == "canceled":
+        upsert_return(conn, order_id, status="approved")
+
+    return order_id
+
+
+def insert_return(conn) -> str | None:
+    row = conn.execute(
+        text("""
+            SELECT order_id
+            FROM orders
+            WHERE order_id LIKE 'sim_order_%'
+              AND order_status IN ('delivered', 'canceled')
+            ORDER BY random()
+            LIMIT 1
+        """)
+    ).fetchone()
+
+    if row is None:
+        return None
+
+    order_id = row[0]
+    upsert_return(conn, order_id, status=random.choice(["requested", "approved", "rejected"]))
+    return order_id
+
+
+def delete_order(conn) -> str | None:
+    row = conn.execute(
+        text("""
+            SELECT order_id
+            FROM orders
+            WHERE order_id LIKE 'sim_order_%'
+            ORDER BY random()
+            LIMIT 1
+        """)
+    ).fetchone()
+
+    if row is None:
+        return None
+
+    order_id = row[0]
+    conn.execute(text("DELETE FROM returns WHERE order_id = :order_id"), {"order_id": order_id})
+    conn.execute(text("DELETE FROM reviews WHERE order_id = :order_id"), {"order_id": order_id})
+    conn.execute(text("DELETE FROM payments WHERE order_id = :order_id"), {"order_id": order_id})
+    conn.execute(text("DELETE FROM order_items WHERE order_id = :order_id"), {"order_id": order_id})
+    conn.execute(text("DELETE FROM orders WHERE order_id = :order_id"), {"order_id": order_id})
     return order_id
 
 
@@ -281,8 +369,8 @@ def run(interval_seconds: float, events: int | None) -> None:
 
     while events is None or produced < events:
         action = random.choices(
-            ["insert_order", "update_order", "insert_review"],
-            weights=[0.45, 0.45, 0.10],
+            ["insert_order", "update_order", "insert_review", "insert_return", "delete_order"],
+            weights=[0.38, 0.34, 0.10, 0.10, 0.08],
             k=1,
         )[0]
 
@@ -291,8 +379,12 @@ def run(interval_seconds: float, events: int | None) -> None:
                 order_id = insert_order(conn)
             elif action == "update_order":
                 order_id = update_order(conn)
-            else:
+            elif action == "insert_review":
                 order_id = insert_review(conn)
+            elif action == "insert_return":
+                order_id = insert_return(conn)
+            else:
+                order_id = delete_order(conn)
 
         if order_id is None:
             continue

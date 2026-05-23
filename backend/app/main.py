@@ -150,6 +150,59 @@ def payment_methods():
     """))
 
 
+@app.get("/api/business/payments-by-period")
+def payments_by_period():
+    return query_or_503(lambda: run_query("""
+        SELECT
+            payment_period,
+            payment_type,
+            total_payments,
+            total_value,
+            gold_updated_at
+        FROM iceberg.gold.payments_by_period
+        ORDER BY payment_period DESC, total_value DESC
+        LIMIT 30
+    """))
+
+
+@app.get("/api/business/returns-summary")
+def returns_summary():
+    return query_or_503(lambda: run_query("""
+        SELECT
+            return_status,
+            COALESCE(return_reason, 'unknown') AS return_reason,
+            total_returns,
+            gold_updated_at
+        FROM iceberg.gold.returns_summary
+        ORDER BY total_returns DESC
+        LIMIT 10
+    """))
+
+
+@app.get("/api/business/customer-segments")
+def customer_segments():
+    return query_or_503(lambda: run_query("""
+        SELECT
+            customer_segment,
+            total_customers,
+            gold_updated_at
+        FROM iceberg.gold.customer_segments
+        ORDER BY total_customers DESC
+    """))
+
+
+@app.get("/api/business/orders-by-channel")
+def orders_by_channel():
+    return query_or_503(lambda: run_query("""
+        SELECT
+            sales_channel,
+            total_orders,
+            gold_updated_at
+        FROM iceberg.gold.orders_by_channel
+        ORDER BY total_orders DESC
+    """))
+
+
 @app.get("/api/business/order-flow")
 def order_flow():
     return query_or_503(lambda: run_query("""

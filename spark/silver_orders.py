@@ -13,8 +13,8 @@ CATALOG = "shopflow"
 BRONZE_TABLE = f"{CATALOG}.bronze.cdc_events"
 SILVER_TABLE = f"{CATALOG}.silver.orders"
 DLQ_TABLE = f"{CATALOG}.dlq.invalid_orders"
-SILVER_CHECKPOINT = "s3a://shopflow-lakehouse/checkpoints/silver_orders"
-DLQ_CHECKPOINT = "s3a://shopflow-lakehouse/checkpoints/dlq_orders"
+SILVER_CHECKPOINT = "s3a://shopflow-lakehouse/checkpoints/silver_orders_pdf_v2"
+DLQ_CHECKPOINT = "s3a://shopflow-lakehouse/checkpoints/dlq_orders_pdf_v2"
 
 
 spark = (

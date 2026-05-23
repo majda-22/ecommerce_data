@@ -46,6 +46,29 @@ type PaymentMethod = {
   total_value: number
 }
 
+type PaymentPeriod = {
+  payment_period: string
+  payment_type: string
+  total_payments: number
+  total_value: number
+}
+
+type ReturnSummary = {
+  return_status: string
+  return_reason: string
+  total_returns: number
+}
+
+type SegmentRow = {
+  customer_segment: string
+  total_customers: number
+}
+
+type ChannelRow = {
+  sales_channel: string
+  total_orders: number
+}
+
 type EventDistribution = {
   operation: string
   total_events: number
@@ -99,6 +122,10 @@ type ApiData = {
   cdcEvents: CdcEvent[]
   revenue: RevenueSummary
   payments: PaymentMethod[]
+  paymentsByPeriod: PaymentPeriod[]
+  returnsSummary: ReturnSummary[]
+  customerSegments: SegmentRow[]
+  ordersByChannel: ChannelRow[]
   eventDistribution: EventDistribution[]
   timeline: TimelinePoint[]
   freshness: FreshnessRow[]
@@ -119,6 +146,10 @@ const fallbackData: ApiData = {
   cdcEvents: [],
   revenue: { total_revenue: 0, payment_events: 0 },
   payments: [],
+  paymentsByPeriod: [],
+  returnsSummary: [],
+  customerSegments: [],
+  ordersByChannel: [],
   eventDistribution: [],
   timeline: [],
   freshness: [],
@@ -233,7 +264,7 @@ function useApiData(mode: Mode) {
     setIsRefreshing(true)
 
     let fulfilled = 0
-    const totalRequests = 15
+    const totalRequests = 19
 
     const applyResult = async <T,>(
       request: () => Promise<T>,
@@ -285,6 +316,26 @@ function useApiData(mode: Mode) {
         () => fetchJson<PaymentMethod[]>(`${API_BASE}/api/business/payment-methods`),
         (current, payments) => ({ ...current, payments }),
         (payments) => payments.length > 0,
+      )
+      await applyResult(
+        () => fetchJson<PaymentPeriod[]>(`${API_BASE}/api/business/payments-by-period`),
+        (current, paymentsByPeriod) => ({ ...current, paymentsByPeriod }),
+        (paymentsByPeriod) => paymentsByPeriod.length > 0,
+      )
+      await applyResult(
+        () => fetchJson<ReturnSummary[]>(`${API_BASE}/api/business/returns-summary`),
+        (current, returnsSummary) => ({ ...current, returnsSummary }),
+        (returnsSummary) => returnsSummary.length > 0,
+      )
+      await applyResult(
+        () => fetchJson<SegmentRow[]>(`${API_BASE}/api/business/customer-segments`),
+        (current, customerSegments) => ({ ...current, customerSegments }),
+        (customerSegments) => customerSegments.length > 0,
+      )
+      await applyResult(
+        () => fetchJson<ChannelRow[]>(`${API_BASE}/api/business/orders-by-channel`),
+        (current, ordersByChannel) => ({ ...current, ordersByChannel }),
+        (ordersByChannel) => ordersByChannel.length > 0,
       )
       await applyResult(
         () => fetchJson<EventDistribution[]>(`${API_BASE}/api/pipeline/event-distribution`),
@@ -569,6 +620,7 @@ function AnalyticsView({ data, mode }: { data: ApiData; mode: Mode }) {
   const totalOrders = data.statuses.reduce((sum, item) => sum + Number(item.total_orders || 0), 0)
   const canceled = data.statuses.find((item) => item.order_status === 'canceled')?.total_orders ?? 0
   const cancellationRate = totalOrders ? (canceled / totalOrders) * 100 : 0
+  const totalReturns = data.returnsSummary.reduce((sum, item) => sum + Number(item.total_returns || 0), 0)
   const avgLatency = data.latency[0]?.avg_latency_seconds ?? 0
   const categoryTotal = data.categories.reduce((sum, item) => sum + Number(item.total_events || 0), 0)
   const statusSlices = data.statuses.map((status) => ({
@@ -582,7 +634,7 @@ function AnalyticsView({ data, mode }: { data: ApiData; mode: Mode }) {
         <KpiCard label="Total Orders" value={formatNumber(totalOrders)} trend={`${mode} API`} tone="violet" />
         <KpiCard label="Total Revenue" value={money(data.revenue.total_revenue)} trend={`${formatNumber(data.revenue.payment_events)} payments`} />
         <KpiCard label="Avg Latency" value={`${Number(avgLatency).toFixed(1)}s`} trend="Spark to gold" tone="green" />
-        <KpiCard label="Cancellation Rate" value={`${cancellationRate.toFixed(1)}%`} trend="From gold table" tone="salmon" />
+        <KpiCard label="Returns / Cancels" value={formatNumber(totalReturns)} trend={`${cancellationRate.toFixed(1)}% canceled`} tone="salmon" />
       </section>
 
       <section className="dashboard-grid analytics-grid">
@@ -622,6 +674,17 @@ function AnalyticsView({ data, mode }: { data: ApiData; mode: Mode }) {
             <strong>{Number(data.reviewScore.review_score || 0).toFixed(2)}</strong>
             <span>{'*'.repeat(Math.max(1, Math.round(Number(data.reviewScore.review_score || 0))))}</span>
           </div>
+        </article>
+
+        <article className="panel">
+          <h2>Customer Segments</h2>
+          {data.customerSegments.length ? data.customerSegments.map((item) => (
+            <div className="progress-row" key={item.customer_segment}>
+              <span>{titleCase(item.customer_segment)}</span>
+              <strong>{formatNumber(item.total_customers)}</strong>
+              <i style={{ width: `${Math.min(100, (Number(item.total_customers || 0) / Math.max(totalOrders, 1)) * 100)}%` }} />
+            </div>
+          )) : <EmptyState />}
         </article>
 
         <article className="panel">
@@ -786,6 +849,16 @@ function OrdersView({ data }: { data: ApiData }) {
             labels
           />
         </article>
+        <article className="panel">
+          <h2>Sales Channels</h2>
+          {data.ordersByChannel.length ? data.ordersByChannel.map((row) => (
+            <div className="progress-row" key={row.sales_channel}>
+              <span>{titleCase(row.sales_channel)}</span>
+              <strong>{formatNumber(row.total_orders)}</strong>
+              <i style={{ width: `${total ? Math.min(100, (Number(row.total_orders || 0) / total) * 100) : 0}%` }} />
+            </div>
+          )) : <EmptyState />}
+        </article>
       </section>
     </main>
   )
@@ -845,6 +918,30 @@ function InventoryView({ data }: { data: ApiData }) {
             slices={data.payments.map((payment) => ({ label: payment.payment_type, value: payment.total_events }))}
             labels
           />
+        </article>
+        <article className="panel">
+          <h2>Returns Summary</h2>
+          {data.returnsSummary.length ? data.returnsSummary.slice(0, 5).map((row) => (
+            <div className="seller-row" key={`${row.return_status}-${row.return_reason}`}>
+              <strong>{formatNumber(row.total_returns)}</strong>
+              <span>{titleCase(row.return_reason)}</span>
+              <em>{titleCase(row.return_status)}</em>
+            </div>
+          )) : <EmptyState />}
+        </article>
+        <article className="panel wide">
+          <h2>Payments by Period</h2>
+          <div className="table-list">
+            {data.paymentsByPeriod.length ? data.paymentsByPeriod.slice(0, 8).map((row) => (
+              <div className="table-row" key={`${row.payment_period}-${row.payment_type}`}>
+                <span>{new Date(row.payment_period).toLocaleDateString()}</span>
+                <span>{titleCase(row.payment_type)}</span>
+                <span>{formatNumber(row.total_payments)} payments</span>
+                <span>{money(row.total_value)}</span>
+                <span>Gold</span>
+              </div>
+            )) : <EmptyState />}
+          </div>
         </article>
       </section>
     </main>

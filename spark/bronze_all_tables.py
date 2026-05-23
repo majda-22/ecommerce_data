@@ -5,7 +5,7 @@ KAFKA_BOOTSTRAP_SERVERS = "kafka:29092"
 CATALOG = "shopflow"
 BRONZE_SCHEMA = "bronze"
 BRONZE_TABLE = f"{CATALOG}.{BRONZE_SCHEMA}.cdc_events"
-CHECKPOINT_LOCATION = "s3a://shopflow-lakehouse/checkpoints/bronze_all_tables"
+CHECKPOINT_LOCATION = "s3a://shopflow-lakehouse/checkpoints/bronze_all_tables_pdf_v2"
 
 SOURCE_TABLES = [
     "customers",
@@ -16,6 +16,7 @@ SOURCE_TABLES = [
     "order_items",
     "payments",
     "reviews",
+    "returns",
 ]
 
 TOPICS = ",".join(f"shopflow.public.{table}" for table in SOURCE_TABLES)
